@@ -48,6 +48,7 @@ import pprint
 # 4/ Once the directories are populated, they are iterated over to build
 #    directory-specific metadata. 
 
+DATA_ROOT = "./data-root/"
 
 def dumpGh3(gh3, data):
   if gh3 == '--data--':
@@ -121,7 +122,7 @@ for line in content:
     desired directory struture """
 def ccGhToDirname(ccGh):
   # Fastest: http://www.skymind.com/~ocrow/python_string/
-  dirList = [ "./data/" ]
+  dirList = [ DATA_ROOT ]
   dirList.append(  ccGh[:3] )
   dirList.append("/")
   dirList.append( ccGh[3:6] )
@@ -162,12 +163,17 @@ def addToDirectory(ppid):
   except ValueError:
     pass
 
-# The start
-with open('/Users/efarrell/Documents/KML/ppids') as f:
+# The start: read the list of {ppid}s and add the appropriate content to the
+# directories
+with open('/Users/enda/Documents/KML/ppids') as f:
   content = f.readlines()
 
 for line in content:
   addToDirectory(line.rstrip('\n'))
+
+# The thing to do now is to walk the filesystem
+w = os.walk( DATA_ROOT, topdown=False)
+# take a look at http://docs.python.org/library/os.html
 
 sys.exit()
 
