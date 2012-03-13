@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import geohash
 import sys
+import os
 import pprint
 #import json
 #import requests
@@ -27,6 +28,26 @@ import pprint
 # You will want to have python 2.7.2 (which on a Mac requires an update): please
 # see http://www.python.org/download/releases/2.7.2/
 #
+# The way this works is essentially a "file/folder"-based approach as follows:
+# 1/ Iterate over each place
+# 2/ -- for each {country:3} create a {country:3} dir
+# 3/ -- for each {geohash:5:-3} create a {geohash:5:-3} dir
+#       (eg, for the {ppid} "724ezjmd-e400738407474eb9b82e1e16ecb8efbc" the
+#       following sub-direcotries are created:
+#       data/
+#       ⊢--- 724/
+#       |    ⊢--- ezj
+#       |    |    ⊢---- m
+#       |    |    |     ⊢--- d
+#       |    |    |     |    ⊢--- 724ezjmd-e400738407474eb9b82e1e16ecb8efbc.kml
+#       The design is to start with countries (the ./data/{country:3}/ dirs, and
+#       within these I have found that visually (on a global scale) that a
+#       3-digit geohash is most appealing - hence
+#       ./data/{country:3}/{geohash:3}. In nearly RESTful fashion, the sub
+#       directories are found with a simple lookup strategy. 
+# 4/ Once the directories are populated, they are iterated over to build
+#    directory-specific metadata. 
+
 
 def dumpGh3(gh3, data):
   if gh3 == '--data--':
@@ -96,12 +117,61 @@ for line in content:
   (code, name) = line.split(' ', 1)
   countryCodes[code] = name[:-1]
 
-with open('/Users/enda/Documents/KML/ppids') as f:
+""" returns the {country-code:3}{geohash:5} as a string representing the
+    desired directory struture """
+def ccGhToDirname(ccGh):
+  # Fastest: http://www.skymind.com/~ocrow/python_string/
+  dirList = [ "./data/" ]
+  dirList.append(  ccGh[:3] )
+  dirList.append("/")
+  dirList.append( ccGh[3:6] )
+  dirList.append("/")
+  dirList.append( ccGh[6:7] )
+  dirList.append("/")
+  dirList.append( ccGh[7:8] )
+  dirList.append("/")
+  return ''.join(dirList)
+
+""" Creates an appropriate directory from the {country-code:3}{geohash:5) if it
+    does not exist """
+def ensureDirectory(ccGh):
+  dirname = ccGhToDirname(ccGh)
+  try:
+    os.makedirs(dirname)
+  except OSError:
+    if os.path.exists(dirname):
+      # We are nearly safe
+      pass
+    else:
+      # There was an error on creation, so make sure we know about it
+      raise
+  return dirname
+
+
+def addToThisDirectory(dir, ppid):
+  f = open(dir + "/" + ppid, "w")
+  f.write(ppid)
+  f.close()
+
+def addToDirectory(ppid):
+  # ppids look like this: 724ezjmd-e400738407474eb9b82e1e16ecb8efbc
+  try:
+    (cc_gh, uuid) = ppid.split('-')
+    dir = ensureDirectory(cc_gh)
+    addToThisDirectory(dir, ppid)
+  except ValueError:
+    pass
+
+# The start
+with open('/Users/efarrell/Documents/KML/ppids') as f:
   content = f.readlines()
 
-countries = dict()
 for line in content:
-  (cc_gh, uuid) = line.split('-')
+  addToDirectory(line.rstrip('\n'))
+
+sys.exit()
+
+"""
   cc = cc_gh[:3]
   gh = cc_gh[4:8]
   gh3 = gh[:3]
@@ -127,3 +197,5 @@ for cc in countries:
   countries[cc]['--data--'] = data
 
 dump(countries)
+"""
+
