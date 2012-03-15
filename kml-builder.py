@@ -133,6 +133,9 @@ def ccGhToDirname(ccGh):
   dirList.append("/")
   return ''.join(dirList)
 
+def dirnameToCcgh(dirname)
+  return dirname.replace( DATA_ROOT, "" ).replace("/","")
+
 """ Creates an appropriate directory from the {country-code:3}{geohash:5) if it
     does not exist """
 def ensureDirectory(ccGh):
@@ -163,6 +166,7 @@ def addToDirectory(ppid):
   except ValueError:
     pass
 
+
 # The start: read the list of {ppid}s and add the appropriate content to the
 # directories
 with open('/Users/enda/Documents/KML/ppids') as f:
@@ -174,6 +178,14 @@ for line in content:
 # The thing to do now is to walk the filesystem
 w = os.walk( DATA_ROOT, topdown=False)
 # take a look at http://docs.python.org/library/os.html
+try:
+  t3 = w.next() 
+  while True:
+    print t3
+    print
+    t3 = w.next()
+except StopIteration:   
+  pass
 
 sys.exit()
 
