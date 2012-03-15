@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import geohash
+import geohash as geohasher
 import sys
 import os
 import pprint
@@ -47,69 +47,12 @@ import pprint
 #       directories are found with a simple lookup strategy. 
 # 4/ Once the directories are populated, they are iterated over to build
 #    directory-specific metadata. 
+# TODO:
+# 1/ Build a rainbow table of the geohashs. We don't _really_ need to keep
+#    recomputing the 3,4 & 5 digit geohashs as they don't change - looking them
+#    up ought to do nicely.
 
 DATA_ROOT = "./data-root/"
-
-def dumpGh3(gh3, data):
-  if gh3 == '--data--':
-    return
-  bbox = geohash.bbox(gh3)
-  data = str(int(data) * 500)
-  print """
-      <Placemark>
-        <name>%s</name>
-        <styleUrl>#s</styleUrl>
-        <Polygon>
-          <extrude>1</extrude>
-          <altitudeMode>relativeToGround</altitudeMode>
-          <outerBoundryIs>
-            <LinearRing>
-              <coordinates>
-                %s,%s,%s
-                %s,%s,%s
-                %s,%s,%s
-                %s,%s,%s
-                %s,%s,%s
-              </coordinates>
-            </LinearRing>
-          </outerBoundryIs>
-        </Polygon>
-      </Placemark>""" % ( gh3, \
-          bbox['n'], bbox['e'], data, \
-          bbox['n'], bbox['w'], data, \
-          bbox['s'], bbox['w'], data, \
-          bbox['s'], bbox['e'], data, \
-          bbox['n'], bbox['e'], data )
-
-def dumpCountry(cc):
-  data = cc['--data--']
-  print """
-    <Folder id="%s">
-      <name>%s</name>
-      <description>The country of "%s" ("%s" code) has %s places</description>
-      <visibility>1</visibility>
-      <open>0</open>  """ % ( data['country-code'], \
-          data['name'], data['name'], data['country-code'], \
-          data['num-poi'] )
-  for gh3 in cc:
-    dumpGh3(gh3, cc[gh3])
-  print """    </Folder>""" 
-
-def dump(x):
-  print """<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document> 
-    <Style id="s">
-      <PolyStyle>
-        <color>33000000</color>
-        <colorMode>random</colorMode>
-        <fill>1</fill>
-      </PolyStyle>
-    </Style>"""
-  for cc in x:
-    dumpCountry(x[cc])
-  print """  </Document>
-</kml>"""
 
 countryCodes = dict()
 with open('ISO-3166-1.txt') as f:
@@ -120,7 +63,7 @@ for line in content:
 
 """ returns the {country-code:3}{geohash:5} as a string representing the
     desired directory struture """
-def ccGhToDirname(ccGh):
+def ccGeohashToDirname(ccGh):
   # Fastest: http://www.skymind.com/~ocrow/python_string/
   dirList = [ DATA_ROOT ]
   dirList.append(  ccGh[:3] )
@@ -133,13 +76,18 @@ def ccGhToDirname(ccGh):
   dirList.append("/")
   return ''.join(dirList)
 
-def dirnameToCcgh(dirname)
+def dirnameToCcGeohash(dirname):
   return dirname.replace( DATA_ROOT, "" ).replace("/","")
+
+def dirnameToGeohash(dirname):
+  ccGh = dirnameToCcGeohash(dirname)
+  return ccGh[3:]
+
 
 """ Creates an appropriate directory from the {country-code:3}{geohash:5) if it
     does not exist """
 def ensureDirectory(ccGh):
-  dirname = ccGhToDirname(ccGh)
+  dirname = ccGeohashToDirname(ccGh)
   try:
     os.makedirs(dirname)
   except OSError:
@@ -166,10 +114,95 @@ def addToDirectory(ppid):
   except ValueError:
     pass
 
+def createMultiPlacemarks(geohash, numPOI):
+  # TODO: wrap lest we have bad geohashs
+  bbox = geohasher.bbox(geohash)
+  latlng = geohasher.decode(geohash)
+  data = str(numPOI * 500)
+  return """
+      <Placemark>
+        <name>%s NE</name>
+        <Point>
+          <coordinates>%s,%s,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>%s SE</name>
+        <Point>
+          <coordinates>%s,%s,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>%s SW</name>
+        <Point>
+          <coordinates>%s,%s,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>%s NW</name>
+        <Point>
+          <coordinates>%s,%s,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>%s centre</name>
+        <Point>
+          <coordinates>%s,%s,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>%s</name>
+        <styleUrl>#s</styleUrl>
+        <visibility>0</visibility>
+        <Polygon>
+          <extrude>1</extrude>
+          <altitudeMode>relativeToGround</altitudeMode>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>
+                %s,%s,%s
+                %s,%s,%s
+                %s,%s,%s
+                %s,%s,%s
+                %s,%s,%s
+              </coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </Placemark>""" % ( \
+          geohash, bbox['e'], bbox['n'], \
+          geohash, bbox['e'], bbox['s'], \
+          geohash, bbox['w'], bbox['s'], \
+          geohash, bbox['w'], bbox['n'], \
+          geohash, latlng[1], latlng[0], \
+          geohash, \
+          bbox['e'], bbox['n'], data, \
+          bbox['w'], bbox['n'], data, \
+          bbox['w'], bbox['s'], data, \
+          bbox['e'], bbox['s'], data, \
+          bbox['e'], bbox['n'], data )
+
+def createKmlWrapper(innerKML):
+  return """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document> 
+    <Style id="s">
+      <PolyStyle>
+        <color>7dff0000</color>
+        <colorMode>normal</colorMode>
+        <fill>1</fill>
+      </PolyStyle>
+    </Style>
+    <Folder>
+      <open>1</open>
+      %s
+    </Folder>
+  </Document>
+</kml>""" % innerKML
 
 # The start: read the list of {ppid}s and add the appropriate content to the
 # directories
-with open('/Users/enda/Documents/KML/ppids') as f:
+with open('/Users/efarrell/Documents/KML/ppids') as f:
   content = f.readlines()
 
 for line in content:
@@ -181,39 +214,42 @@ w = os.walk( DATA_ROOT, topdown=False)
 try:
   t3 = w.next() 
   while True:
-    print t3
-    print
+    # t3 is (dirpath, dirnames, filenames)
+    (dirpath, dirnames, filenames) = t3
+
+    # OK: so we need the geohash - not all dirs have geohashs - remember the
+    # country codes and the root dir! 
+    geohash = dirnameToGeohash(dirpath)
+    
+    print "%-5s" % geohash,
+
+    # As this is taken bottom up, we get a list of the POI under the geohash.
+    # In this first pass, I will only be gathering the number of POI and making
+    # an extrusion based on that number.
+
+    # How many of the files are "POI" {ppid}s? POI have a given length. Note
+    # that this number does not include the decendents!
+    numPOI = 0
+    for filename in filenames:
+      if len(filename) == 41:
+        numPOI = numPOI + 1
+
+
+    if len(geohash) > 2:
+      # This _is_ a geohash, so we can do good things with it
+      if numPOI > 0:
+        # At this early stage, I do not want to create KML for empty nor
+        # higher-level geohashs
+        kml = createKmlWrapper(createMultiPlacemarks(geohash, numPOI))
+        f = open( "%s/%s.kml"% (dirpath, geohash), "w")
+        f.write(kml)
+        f.close()
+    
+    print "\b\b\b\b\b",
+
     t3 = w.next()
 except StopIteration:   
   pass
 
 sys.exit()
-
-"""
-  cc = cc_gh[:3]
-  gh = cc_gh[4:8]
-  gh3 = gh[:3]
-  if cc in countries:
-    ccGh = countries[cc]
-    if gh3 in ccGh:
-      ccGh[gh3] = ccGh[gh3] + 1
-    else:
-      ccGh[gh3] = 1
-  else:
-    countries[cc] = dict()
-    countries[cc][gh3] = 1
-
-for cc in countries:
-  country = countries[cc]
-  data = dict()
-  data['name'] = countryCodes[cc]
-  numPoi = 0
-  for gh3 in country:
-    numPoi = numPoi + country[gh3]
-  data['num-poi'] = numPoi
-  data['country-code'] = cc
-  countries[cc]['--data--'] = data
-
-dump(countries)
-"""
 
