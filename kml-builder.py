@@ -222,6 +222,7 @@ try:
     geohash = dirnameToGeohash(dirpath)
     
     if len(geohash) > 2:
+      print "\b\b\b\b\b\b",
       print "%-5s" % geohash,
       sys.stdout.flush()
 
@@ -246,8 +247,6 @@ try:
         f = open( "%s/%s.kml"% (dirpath, geohash), "w")
         f.write(kml)
         f.close()
-      print "\b\b\b\b\b\b",
-      sys.stdout.flush()
 
     t3 = w.next()
 except StopIteration:   
