@@ -202,7 +202,7 @@ def createKmlWrapper(innerKML):
 
 # The start: read the list of {ppid}s and add the appropriate content to the
 # directories
-with open('/Users/efarrell/Documents/KML/ppids') as f:
+with open('/Users/enda/Documents/KML/ppids') as f:
   content = f.readlines()
 
 for line in content:
@@ -221,7 +221,9 @@ try:
     # country codes and the root dir! 
     geohash = dirnameToGeohash(dirpath)
     
-    print "%-5s" % geohash,
+    if len(geohash) > 2:
+      print "%-5s" % geohash,
+      sys.stdout.flush()
 
     # As this is taken bottom up, we get a list of the POI under the geohash.
     # In this first pass, I will only be gathering the number of POI and making
@@ -244,8 +246,8 @@ try:
         f = open( "%s/%s.kml"% (dirpath, geohash), "w")
         f.write(kml)
         f.close()
-    
-    print "\b\b\b\b\b",
+      print "\b\b\b\b\b\b",
+      sys.stdout.flush()
 
     t3 = w.next()
 except StopIteration:   
