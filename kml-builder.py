@@ -114,6 +114,33 @@ def addToDirectory(ppid):
   except ValueError:
     pass
 
+def createNetworkLink(dirname, geohash):
+  bbox = geohasher.bbox(geohash)
+  return """<NetworkLink>
+    <name>%s</name>
+    <Region>
+      <LatLonAltBox>
+        <north>%s</north>
+        <south>%s</south>
+        <east>%s</east>
+        <west>%s</west>
+      </LatLonAltBox>
+      <Lod>
+        <minLodPixels>128</minLodPixels>
+        <maxLodPixels>1024</maxLodPixels>
+      </Lod>
+    </Region>
+    <Link>
+      <href>%s/index.kml</href>
+      <viewRefreshMode>onRegion</viewRefreshMode>
+    </Link>
+  </NetworkLink>""" % ( \
+      geohash, \
+      bbox['n'], bbox['s'], bbox['e'], bbox['w'], \
+      dirname)
+
+
+
 def createMultiPlacemarks(geohash, numPOI):
   # TODO: wrap lest we have bad geohashs
   bbox = geohasher.bbox(geohash)
@@ -121,31 +148,7 @@ def createMultiPlacemarks(geohash, numPOI):
   data = str(numPOI * 500)
   return """
       <Placemark>
-        <name>%s NE</name>
-        <Point>
-          <coordinates>%s,%s,0</coordinates>
-        </Point>
-      </Placemark>
-      <Placemark>
-        <name>%s SE</name>
-        <Point>
-          <coordinates>%s,%s,0</coordinates>
-        </Point>
-      </Placemark>
-      <Placemark>
-        <name>%s SW</name>
-        <Point>
-          <coordinates>%s,%s,0</coordinates>
-        </Point>
-      </Placemark>
-      <Placemark>
-        <name>%s NW</name>
-        <Point>
-          <coordinates>%s,%s,0</coordinates>
-        </Point>
-      </Placemark>
-      <Placemark>
-        <name>%s centre</name>
+        <name>%s: %d POI</name>
         <Point>
           <coordinates>%s,%s,0</coordinates>
         </Point>
@@ -153,7 +156,7 @@ def createMultiPlacemarks(geohash, numPOI):
       <Placemark>
         <name>%s</name>
         <styleUrl>#s</styleUrl>
-        <visibility>0</visibility>
+        <visibility>1</visibility>
         <Polygon>
           <extrude>1</extrude>
           <altitudeMode>relativeToGround</altitudeMode>
@@ -170,11 +173,8 @@ def createMultiPlacemarks(geohash, numPOI):
           </outerBoundaryIs>
         </Polygon>
       </Placemark>""" % ( \
-          geohash, bbox['e'], bbox['n'], \
-          geohash, bbox['e'], bbox['s'], \
-          geohash, bbox['w'], bbox['s'], \
-          geohash, bbox['w'], bbox['n'], \
-          geohash, latlng[1], latlng[0], \
+          geohash, numPOI, \
+          latlng[1], latlng[0], \
           geohash, \
           bbox['e'], bbox['n'], data, \
           bbox['w'], bbox['n'], data, \
@@ -193,10 +193,7 @@ def createKmlWrapper(innerKML):
         <fill>1</fill>
       </PolyStyle>
     </Style>
-    <Folder>
-      <open>1</open>
-      %s
-    </Folder>
+    %s
   </Document>
 </kml>""" % innerKML
 
@@ -210,7 +207,9 @@ for line in content:
 
 # The thing to do now is to walk the filesystem
 w = os.walk( DATA_ROOT, topdown=False)
+pGeohash = ""
 # take a look at http://docs.python.org/library/os.html
+# In this first pass, we look for the data points only
 try:
   t3 = w.next() 
   while True:
@@ -222,8 +221,9 @@ try:
     geohash = dirnameToGeohash(dirpath)
     
     if len(geohash) > 2:
-      print "\b\b\b\b\b\b",
-      print "%-5s" % geohash,
+      print "\b" * (2 + len(pGeohash)),
+      print geohash,
+      pGeohash = geohash
       sys.stdout.flush()
 
     # As this is taken bottom up, we get a list of the POI under the geohash.
@@ -236,15 +236,11 @@ try:
     for filename in filenames:
       if len(filename) == 41:
         numPOI = numPOI + 1
-
-
-    if len(geohash) > 2:
-      # This _is_ a geohash, so we can do good things with it
       if numPOI > 0:
         # At this early stage, I do not want to create KML for empty nor
         # higher-level geohashs
         kml = createKmlWrapper(createMultiPlacemarks(geohash, numPOI))
-        f = open( "%s/%s.kml"% (dirpath, geohash), "w")
+        f = open( "%s/index.kml"% dirpath, "w")
         f.write(kml)
         f.close()
 
@@ -252,5 +248,45 @@ try:
 except StopIteration:   
   pass
 
+print "\nProcessing index files"
+w = os.walk( DATA_ROOT, topdown=False)
+pdirpath = ""
+# In this pass, we handle the "index" KML files only
+try:
+  t3 = w.next() 
+  while True:
+    # t3 is (dirpath, dirnames, filenames)
+    (dirpath, dirnames, filenames) = t3
+
+    print "\b" * (2 + len(pdirpath)),
+    print dirpath,
+    pdirpath = dirpath
+    sys.stdout.flush()
+
+    geohashRoot = dirnameToGeohash(dirpath)
+    #if geohashRoot == "":
+    #  t3 = w.next()
+    #  continue
+
+    if "index.kml" in filenames:
+      t3 = w.next()
+      continue
+
+    networkLinks = ""
+    for dirname in dirnames:
+      # Create a network-link based parent KML
+      geohash = geohashRoot + dirname
+      networkLinks = networkLinks \
+          + createNetworkLink(dirname, geohash)
+    kml = createKmlWrapper(networkLinks)
+    f = open("%s/index.kml" % dirpath, "w")
+    f.write(kml)
+    f.close()
+
+    t3 = w.next()
+except StopIteration:   
+  pass
+
+print "\nFinished"
 sys.exit()
 
