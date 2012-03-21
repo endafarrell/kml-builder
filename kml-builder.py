@@ -6,6 +6,9 @@ import os
 import pprint
 #import json
 #import requests
+# Note: not using pyKML as the dependencies for lxml are not acceptable at this
+# time on my machine, hence manual building of KML. As all of the KML being used
+# here is quite simple, that's not a major problem.
 
 # The "root" KML file shall be a set of folders containing the countries where
 # our list of places are to be found. A small set therefore may not have all of
@@ -85,7 +88,9 @@ def dirnameToGeohash(dirname):
 
 
 """ Creates an appropriate directory from the {country-code:3}{geohash:5) if it
-    does not exist """
+    does not exist. Note that filesystem caches are faster than trying to keep
+    track of whether we have already created this - even on a spinning HDD, very
+    much more so on an SSD. """
 def ensureDirectory(ccGh):
   dirname = ccGeohashToDirname(ccGh)
   try:
@@ -114,27 +119,52 @@ def addToDirectory(ppid):
   except ValueError:
     pass
 
-def createNetworkLink(dirname, geohash):
+def createPolygonNetworkLink(dirname, geohash):
   bbox = geohasher.bbox(geohash)
-  return """<NetworkLink>
-    <name>%s</name>
-    <Region>
-      <LatLonAltBox>
-        <north>%s</north>
-        <south>%s</south>
-        <east>%s</east>
-        <west>%s</west>
-      </LatLonAltBox>
-      <Lod>
-        <minLodPixels>128</minLodPixels>
-        <maxLodPixels>1024</maxLodPixels>
-      </Lod>
-    </Region>
-    <Link>
-      <href>%s/index.kml</href>
-      <viewRefreshMode>onRegion</viewRefreshMode>
-    </Link>
-  </NetworkLink>""" % ( \
+  return """
+   <Placemark>
+      <name>%s</name>
+      <styleUrl>#s</styleUrl>
+      <Polygon>
+        <extrude>1</extrude>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              %s,%s,0
+              %s,%s,0
+              %s,%s,0
+              %s,%s,0
+              %s,%s,0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <NetworkLink>
+      <name>%s</name>
+      <Region>
+        <LatLonAltBox>
+          <north>%s</north>
+          <south>%s</south>
+          <east>%s</east>
+          <west>%s</west>
+        </LatLonAltBox>
+        <Lod>
+          <minLodPixels>128</minLodPixels>
+          <maxLodPixels>1024</maxLodPixels>
+        </Lod>
+      </Region>
+      <Link>
+        <href>%s/index.kml</href>
+        <viewRefreshMode>onRegion</viewRefreshMode>
+      </Link>
+    </NetworkLink>""" % ( geohash, \
+      bbox['e'], bbox['n'], \
+      bbox['w'], bbox['n'], \
+      bbox['w'], bbox['s'], \
+      bbox['e'], bbox['s'], \
+      bbox['e'], bbox['n'], \
       geohash, \
       bbox['n'], bbox['s'], bbox['e'], bbox['w'], \
       dirname)
@@ -182,10 +212,11 @@ def createMultiPlacemarks(geohash, numPOI):
           bbox['e'], bbox['s'], data, \
           bbox['e'], bbox['n'], data )
 
-def createKmlWrapper(innerKML):
+def createKmlWrapper(name, innerKML):
   return """<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document> 
+    <name>%s</name>
     <Style id="s">
       <PolyStyle>
         <color>7dff0000</color>
@@ -195,7 +226,7 @@ def createKmlWrapper(innerKML):
     </Style>
     %s
   </Document>
-</kml>""" % innerKML
+</kml>""" % (name, innerKML)
 
 # The start: read the list of {ppid}s and add the appropriate content to the
 # directories
@@ -239,7 +270,7 @@ try:
       if numPOI > 0:
         # At this early stage, I do not want to create KML for empty nor
         # higher-level geohashs
-        kml = createKmlWrapper(createMultiPlacemarks(geohash, numPOI))
+        kml = createKmlWrapper("%s: %d" % (geohash, numPOI), createMultiPlacemarks(geohash, numPOI))
         f = open( "%s/index.kml"% dirpath, "w")
         f.write(kml)
         f.close()
@@ -272,13 +303,13 @@ try:
       t3 = w.next()
       continue
 
-    networkLinks = ""
+    kml = ""
     for dirname in dirnames:
       # Create a network-link based parent KML
       geohash = geohashRoot + dirname
-      networkLinks = networkLinks \
-          + createNetworkLink(dirname, geohash)
-    kml = createKmlWrapper(networkLinks)
+      kml = kml \
+          + createPolygonNetworkLink(dirname, geohash)
+    kml = createKmlWrapper(geohash, kml)
     f = open("%s/index.kml" % dirpath, "w")
     f.write(kml)
     f.close()
