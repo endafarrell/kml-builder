@@ -64,9 +64,9 @@ for line in content:
   (code, name) = line.split(' ', 1)
   countryCodes[code] = name[:-1]
 
-""" returns the {country-code:3}{geohash:5} as a string representing the
-    desired directory struture """
 def ccGeohashToDirname(ccGh):
+  """ returns the {country-code:3}{geohash:5} as a string representing the
+    desired directory struture """
   # Fastest: http://www.skymind.com/~ocrow/python_string/
   dirList = [ DATA_ROOT ]
   dirList.append(  ccGh[:3] )
@@ -82,16 +82,17 @@ def ccGeohashToDirname(ccGh):
 def dirnameToCcGeohash(dirname):
   return dirname.replace( DATA_ROOT, "" ).replace("/","")
 
-def dirnameToGeohash(dirname):
+def dirnameToCountryCodeGeohash(dirname):
   ccGh = dirnameToCcGeohash(dirname)
-  return ccGh[3:]
+  return ccGh[:3], ccGh[3:]
 
 
-""" Creates an appropriate directory from the {country-code:3}{geohash:5) if it
+
+def ensureDirectory(ccGh):
+  """ Creates an appropriate directory from the {country-code:3}{geohash:5) if it
     does not exist. Note that filesystem caches are faster than trying to keep
     track of whether we have already created this - even on a spinning HDD, very
     much more so on an SSD. """
-def ensureDirectory(ccGh):
   dirname = ccGeohashToDirname(ccGh)
   try:
     os.makedirs(dirname)
@@ -119,114 +120,154 @@ def addToDirectory(ppid):
   except ValueError:
     pass
 
-def createPolygonNetworkLink(dirname, geohash):
+def createKmlWrapper(networkLinkControl, name, style, innerKML):
+  return """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  %s
+  <Document> 
+    <name>%s</name>
+    %s
+    %s
+  </Document>
+</kml>""" % (networkLinkControl, name, style, innerKML)
+
+def geohashCoordinates(geohash, alt=0):
+  """ Returns a string representing the coordinates of a geohash in a style
+      suitable for using with Polygons, starting at the NE corner and moving
+      in an anti-clockwise direction."""
+  height = 500 * float(alt)
   bbox = geohasher.bbox(geohash)
-  return """
-   <Placemark>
-      <name>%s</name>
-      <styleUrl>#s</styleUrl>
+  return """%s,%s,%d
+              %s,%s,%d
+              %s,%s,%d
+              %s,%s,%d
+              %s,%s,%d""" % ( \
+        bbox['e'], bbox['n'], height, \
+        bbox['w'], bbox['n'], height, \
+        bbox['w'], bbox['s'], height, \
+        bbox['e'], bbox['s'], height, \
+        bbox['e'], bbox['n'], height )
+
+def innerGeohashKML(geohash, innerDir):
+  bbox = geohasher.bbox(geohash)
+  return """  <NetworkLink>
+    <name>%s</name>
+    <Region>
+      <LatLonAltBox>
+        <north>%s</north>
+        <south>%s</south>
+        <east>%s</east>
+        <west>%s</west>
+      </LatLonAltBox>
+      <Lod>
+        <minLodPixels>32</minLodPixels>
+        <maxLodPixels>768</maxLodPixels>
+      </Lod>
+    </Region>
+    <Link>
+      <href>./%s/index.kml</href>
+      <viewRefreshMode>onRegion</viewRefreshMode>
+    </Link>
+  </NetworkLink>""" % (geohash, bbox['n'], bbox['s'], bbox['e'], bbox['w'], innerDir)
+  
+def writeGeohashKml(geohash, innerGeohashs, innerPOIs, filename):
+  """ What's needed to build a geohash's KML? The following:
+    1/ geohash being drawn. Usage:- to set the Camera and the LineRing (for
+         outer border) in the NetworkLinkControl, and the name
+       for this.
+    2/ innerGeohashs found within this geohash. This is a list of dicts - the
+       inner geohash name and other details. These are used
+       to create both Polygons and NetworkLinks to the next level of detail.
+    3/ innerPOIs found within this geohash. This is a list of tuples - the POI
+       and whatever details are to be shown about the POI.
+    4/ filename - to help understand whic KML file is actually on-screen.
+    Note that there is a similarity with what os.walk gives here - with the first
+    three parameters - not initially on purpose, but it makes sense."""
+  # NOTE: when the geohash == "" (the empty string) we are really dealing with
+  # a country and not a geohash. This is not dealt with properly yet.
+  numPoi = 0
+  for innerGeohash in innerGeohashs:
+    numPoi = numPoi + innerGeohash["numPoi"]
+  message = "%s has %d inner geohashs, %d direct POI and %d descendent POI" % (geohash, \
+        len(innerGeohashs), len(innerPOIs), numPoi)
+  networkLinkControl = """  <NetworkLinkControl>
+   <!--<message>This is KML file %s</message>-->
+   <linkDescription><![CDATA[%s]]></linkDescription>
+  </NetworkLinkControl>""" % (filename, message)
+  # Note that the networkLinkControl could also have the following:
+  # <linkName>New KML features</linkName>
+  # <linkDescription><![CDATA[KML now has new features available!]]></linkDescription>
+  # TODO: add the Camera element to this.
+  coordinates = geohashCoordinates(geohash, numPoi)
+  outerBorder = """  <Placemark>
+    <name>%s outer border</name>
+    <description>%s</description>
+    <styleUrl>#g%d</styleUrl>
+    <MultiGeometry>
+      <LineString>
+        <extrude>0</extrude>
+        <tessellate>1</tessellate>
+        <coordinates>%s</coordinates>
+      </LineString>
       <Polygon>
         <extrude>1</extrude>
         <altitudeMode>relativeToGround</altitudeMode>
         <outerBoundaryIs>
           <LinearRing>
-            <coordinates>
-              %s,%s,0
-              %s,%s,0
-              %s,%s,0
-              %s,%s,0
-              %s,%s,0
-            </coordinates>
+            <coordinates>%s</coordinates>
           </LinearRing>
         </outerBoundaryIs>
       </Polygon>
-    </Placemark>
-    <NetworkLink>
-      <name>%s</name>
-      <Region>
-        <LatLonAltBox>
-          <north>%s</north>
-          <south>%s</south>
-          <east>%s</east>
-          <west>%s</west>
-        </LatLonAltBox>
-        <Lod>
-          <minLodPixels>128</minLodPixels>
-          <maxLodPixels>1024</maxLodPixels>
-        </Lod>
-      </Region>
-      <Link>
-        <href>%s/index.kml</href>
-        <viewRefreshMode>onRegion</viewRefreshMode>
-      </Link>
-    </NetworkLink>""" % ( geohash, \
-      bbox['e'], bbox['n'], \
-      bbox['w'], bbox['n'], \
-      bbox['w'], bbox['s'], \
-      bbox['e'], bbox['s'], \
-      bbox['e'], bbox['n'], \
-      geohash, \
-      bbox['n'], bbox['s'], bbox['e'], bbox['w'], \
-      dirname)
-
-
-
-def createMultiPlacemarks(geohash, numPOI):
-  # TODO: wrap lest we have bad geohashs
-  bbox = geohasher.bbox(geohash)
-  latlng = geohasher.decode(geohash)
-  data = str(numPOI * 500)
-  return """
-      <Placemark>
-        <name>%s: %d POI</name>
-        <Point>
-          <coordinates>%s,%s,0</coordinates>
-        </Point>
-      </Placemark>
-      <Placemark>
-        <name>%s</name>
-        <styleUrl>#s</styleUrl>
-        <visibility>1</visibility>
-        <Polygon>
-          <extrude>1</extrude>
-          <altitudeMode>relativeToGround</altitudeMode>
-          <outerBoundaryIs>
-            <LinearRing>
-              <coordinates>
-                %s,%s,%s
-                %s,%s,%s
-                %s,%s,%s
-                %s,%s,%s
-                %s,%s,%s
-              </coordinates>
-            </LinearRing>
-          </outerBoundaryIs>
-        </Polygon>
-      </Placemark>""" % ( \
-          geohash, numPOI, \
-          latlng[1], latlng[0], \
-          geohash, \
-          bbox['e'], bbox['n'], data, \
-          bbox['w'], bbox['n'], data, \
-          bbox['w'], bbox['s'], data, \
-          bbox['e'], bbox['s'], data, \
-          bbox['e'], bbox['n'], data )
-
-def createKmlWrapper(name, innerKML):
-  return """<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document> 
-    <name>%s</name>
-    <Style id="s">
+    </MultiGeometry>
+  </Placemark>""" % (geohash, message, len(geohash), coordinates, coordinates)
+  style = """<Style id="g3">
       <PolyStyle>
-        <color>7dff0000</color>
+        <color>281400FF</color>
         <colorMode>normal</colorMode>
         <fill>1</fill>
       </PolyStyle>
     </Style>
-    %s
-  </Document>
-</kml>""" % (name, innerKML)
+    <Style id="g4">
+      <PolyStyle>
+        <color>2814B4FF</color>
+        <colorMode>normal</colorMode>
+        <fill>1</fill>
+      </PolyStyle>
+    </Style>
+    <Style id="g5">
+      <PolyStyle>
+        <color>1414F0FF</color>
+        <colorMode>normal</colorMode>
+        <fill>1</fill>
+      </PolyStyle>
+    </Style>"""
+  innerKML = outerBorder
+  for innerGeohash in innerGeohashs:
+    igName = innerGeohash["name"]
+    igDir = innerGeohash["dir"]
+    igNumPOI = innerGeohash["numPoi"]
+    innerGeohashKml = innerGeohashKML(igName, igDir)
+    innerKML = "%s%s" % (innerKML, innerGeohashKml)
+  
+  kml = createKmlWrapper(networkLinkControl, geohash, style, innerKML)
+  f = open(filename, "w")
+  f.write(kml)
+  f.close()
+
+def writeNumPOI(childPoi, dirname):
+  f = open("%s/num.poi" % dirname, "w")
+  f.write(str(childPoi))
+  f.close()
+
+def readNumPOI(childPoi, dirname):
+  try:
+    f = open("%s/num.poi" % dirname, "r")
+    poi = f.readline()
+    f.close()
+    childPoi = childPoi + int(poi)
+  except IOError:
+    pass
+  return childPoi
 
 # The start: read the list of {ppid}s and add the appropriate content to the
 # directories
@@ -249,7 +290,7 @@ try:
 
     # OK: so we need the geohash - not all dirs have geohashs - remember the
     # country codes and the root dir! 
-    geohash = dirnameToGeohash(dirpath)
+    countryCode, geohash = dirnameToCountryCodeGeohash(dirpath)
     
     if len(geohash) > 2:
       print "\b" * (2 + len(pGeohash)),
@@ -257,63 +298,26 @@ try:
       pGeohash = geohash
       sys.stdout.flush()
 
-    # As this is taken bottom up, we get a list of the POI under the geohash.
-    # In this first pass, I will only be gathering the number of POI and making
-    # an extrusion based on that number.
 
     # How many of the files are "POI" {ppid}s? POI have a given length. Note
     # that this number does not include the decendents!
-    numPOI = 0
+    innerGeohashs = []
+    innerPOIs = []
     for filename in filenames:
       if len(filename) == 41:
-        numPOI = numPOI + 1
-      if numPOI > 0:
-        # At this early stage, I do not want to create KML for empty nor
-        # higher-level geohashs
-        kml = createKmlWrapper("%s: %d" % (geohash, numPOI), createMultiPlacemarks(geohash, numPOI))
-        f = open( "%s/index.kml"% dirpath, "w")
-        f.write(kml)
-        f.close()
-
-    t3 = w.next()
-except StopIteration:   
-  pass
-
-print "\nProcessing index files"
-w = os.walk( DATA_ROOT, topdown=False)
-pdirpath = ""
-# In this pass, we handle the "index" KML files only
-try:
-  t3 = w.next() 
-  while True:
-    # t3 is (dirpath, dirnames, filenames)
-    (dirpath, dirnames, filenames) = t3
-
-    print "\b" * (2 + len(pdirpath)),
-    print dirpath,
-    pdirpath = dirpath
-    sys.stdout.flush()
-
-    geohashRoot = dirnameToGeohash(dirpath)
-    #if geohashRoot == "":
-    #  t3 = w.next()
-    #  continue
-
-    if "index.kml" in filenames:
-      t3 = w.next()
-      continue
-
-    kml = ""
+        innerPOIs.append(filename)
+    childPoi = len(innerPOIs)
     for dirname in dirnames:
-      # Create a network-link based parent KML
-      geohash = geohashRoot + dirname
-      kml = kml \
-          + createPolygonNetworkLink(dirname, geohash)
-    kml = createKmlWrapper(geohash, kml)
-    f = open("%s/index.kml" % dirpath, "w")
-    f.write(kml)
-    f.close()
-
+      innerGeohash = dict()
+      innerGeohash["name"] = "%s%s" % (geohash, dirname)
+      innerGeohash["dir"] = dirname
+      childPoi = readNumPOI(childPoi, os.path.join(dirpath, dirname))
+      innerGeohash["numPoi"] = childPoi
+      innerGeohashs.append(innerGeohash)
+      
+    kmlFilename = "%s/index.kml"% dirpath
+    writeNumPOI(childPoi, dirpath)
+    writeGeohashKml(geohash, innerGeohashs, innerPOIs, kmlFilename)
     t3 = w.next()
 except StopIteration:   
   pass
