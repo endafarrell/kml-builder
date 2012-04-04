@@ -9,6 +9,7 @@ from shapely.ops import cascaded_union
 import sys
 import os
 import pprint
+import time
 
 # Note: not using pyKML as the dependencies for lxml are not acceptable at this
 # time on my machine, hence manual building of KML. As all of the KML being used
@@ -144,7 +145,13 @@ class KmlBuilder:
     ''' using some complex geometry unioning here! '''
     if geohash is None:
       return
-    geohash = geohash[:3] # Don't want too much
+    # Here's an optimisation - without which a 45M POI run was taking well over
+    # 12 hours. We're drawing the largest regions using 3-digit geohashs, and
+    # each POI will live in one of these. The calculation of "within" is really
+    # expensive and I'd like to avoid doing it - so to dramatically cut the
+    # time, the best way is to dramatically cut the number of times it's done.
+    if len(geohash) != 3:
+      return
     b = geohasher.bbox(geohash)
     polygon = Polygon([
         (b['e'], b['n']), \
@@ -405,12 +412,26 @@ class KmlBuilder:
   # The start: read the list of {ppid}s and add the appropriate content to the
   # directories
   def main(self):
+    print "Reading POI file ... ",
+    sys.stdout.flush()
+    startMillis = int(round(time.time() * 1000))
     with open(self.poiFile, "r") as f:
       content = f.readlines()
-
+    numPOI = len(content)
+    endMillis = int(round(time.time() * 1000))
+    print " read %d POI in %d millis. Starting countries:" \
+        % (numPOI, (endMillis - startMillis))
+    sys.stdout.flush()
+    i = 0
+    pCC = ""
     for line in content:
       countryCode, geohash = self.addToDirectory(line.rstrip('\n'))
+      if pCC != countryCode:
+        print "%s (%d%%)" % (countryCode, int(100 * i / numPOI)),
+        sys.stdout.flush()
+        pCC = countryCode
       self.addGeohashToCountry(countryCode, geohash)
+      i = i + 1
 
     # The thing to do now is to walk the filesystem
     w = os.walk( self.DATA_ROOT, topdown=False )
