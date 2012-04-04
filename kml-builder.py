@@ -419,21 +419,40 @@ class KmlBuilder:
       content = f.readlines()
     numPOI = len(content)
     endMillis = int(round(time.time() * 1000))
-    print " read %d POI in %d millis. Starting countries:" \
-        % (numPOI, (endMillis - startMillis))
-    sys.stdout.flush()
+    print " read %d POI in %d millis. Adding geohash directories" \
+        % (numPOI, (endMillis - startMillis)),
+    print " (each dot is 1000):" 
+    i = 0
+    for line in content:
+      if i % 1000 == 0:
+        print ".",
+        sys.stdout.flush()
+      countryCode, geohash = self.addToDirectory(line.rstrip('\n'))
+    print "\nAll POI added. Adding geohashs to countries:"
+
     i = 0
     pCC = ""
-    for line in content:
-      countryCode, geohash = self.addToDirectory(line.rstrip('\n'))
-      if pCC != countryCode:
-        print "%s (%d%%)" % (countryCode, int(100 * i / numPOI)),
-        sys.stdout.flush()
-        pCC = countryCode
-      self.addGeohashToCountry(countryCode, geohash)
-      i = i + 1
+    w = os.walk( self.DATA_ROOT, topdown=False )
+    try:
+      t3 = w.next() 
+      while True:
+        # t3 is (dirpath, dirnames, filenames)
+        (dirpath, dirnames, filenames) = t3
+        countryCode, geohash = self.dirnameToCountryCodeGeohash(dirpath)
+        if pCC != countryCode:
+          print "%s (%d%%)" % (countryCode, int(100 * i / numPOI)),
+          sys.stdout.flush()
+          pCC = countryCode
+        # this is the _real_ work of this portion!
+        self.addGeohashToCountry(countryCode, geohash)
+        i = i + 1
+        t3 = w.next()
+    except StopIteration:
+      pass
 
-    # The thing to do now is to walk the filesystem
+    print "\nAll geohashs added. Building KML:"
+
+    # The thing to do is to walk the filesystem
     w = os.walk( self.DATA_ROOT, topdown=False )
 
     pGeohash = "" # <- this is used for progress printing ...
