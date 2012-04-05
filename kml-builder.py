@@ -421,11 +421,15 @@ class KmlBuilder:
     endMillis = int(round(time.time() * 1000))
     print " read %d POI in %d millis. Adding geohash directories" \
         % (numPOI, (endMillis - startMillis)),
-    print " (each dot is 1000):" 
+    dotNum = 10000
+    print " (each dot is %d):" % dotDNum 
     i = 0
     for line in content:
-      if i % 1000 == 0:
+      if i % dotNum == 0:
         print ".",
+        sys.stdout.flush()
+      if i % (10* dotNum) == 0:
+        print " %d%% " % int(100 * i / numPOI),
         sys.stdout.flush()
       countryCode, geohash = self.addToDirectory(line.rstrip('\n'))
     print "\nAll POI added. Adding geohashs to countries:"
