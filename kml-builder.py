@@ -82,16 +82,18 @@ class KmlBuilder:
     """ returns the {country-code:3}{geohash:5} as a string representing the
       desired directory struture """
     # Fastest: http://www.skymind.com/~ocrow/python_string/
-    dirList = [ KmlBuilder.DATA_ROOT ]
-    dirList.append("/")
-    dirList.append(  ccGh[:3] )
-    dirList.append("/")
-    dirList.append( ccGh[3:6] )
-    dirList.append("/")
-    dirList.append( ccGh[6:7] )
-    dirList.append("/")
-    dirList.append( ccGh[7:8] )
-    dirList.append("/")
+    dirList = [
+        KmlBuilder.DATA_ROOT,
+        "/",
+        ccGh[:3],
+        "/",
+        ccGh[3:6],
+        "/",
+        ccGh[6:7],
+        "/",
+        ccGh[7:8],
+        "/",
+    ]
     return ''.join(dirList)
 
   def dirnameToCcGeohash(self, dirname):
@@ -198,13 +200,9 @@ class KmlBuilder:
 
   def innerCountryKML(self, countryCode, innerDir):
     try:
-      multipoly = self.countrysPolygon[countryCode] 
+      multipoly = self.countrysPolygon[countryCode]
       bds = multipoly.bounds
-      b = dict()
-      b['w'] = str(bds[0])
-      b['s'] = str(bds[1])
-      b['e'] = str(bds[2])
-      b['n'] = str(bds[3])
+      b = {'w': str(bds[0]), 's': str(bds[1]), 'e': str(bds[2]), 'n': str(bds[3])}
       coordinates = "%s,%s %s,%s %s,%s %s,%s %s,%s" % \
         (b['e'], b['n'], \
         b['w'], b['n'], \
